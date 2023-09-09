@@ -1,10 +1,15 @@
 # ups
 DIY UPS VRLA Battery Controller for ESP32C3, ESP32, M5Stack Core  
 
+Network devices and servers connected to USB ports will continue to operate even in power outage.
+
 <font color="red">CONTENTS ON THIS REPOSITORY ARE UNDER DEVELOPMENT</font>  
 
 ![DIY UPS System](/pictures/ups_m5stack.jpg)  
 Fig. DIY UPS System Using M5Stack Core and 12V 7.2Ah VRLA Battery
+
+![DIY UPS System](/pictures/ups_m5stack_outage.jpg)  
+Fig. Server Continuity Plan in Power Outage
 
 ### WARNING
 I do not take any responsibility for safety.
@@ -19,7 +24,8 @@ For example, mishandling batteries may result in danger to your life or loss of 
 
 ### Features
 - for 12V VRLA Batteries
-- Charging / Discharging / Battery Level Meter
+- Level Meters show Charging/Discharging Power and Battery Voltage
+- USB Type A Female Output Ports, 5V 500mA
 
 ### Inputs of 2 ADCs used for Voltage And Current Measurement  
 One ADC is for battery voltage measurement.  
