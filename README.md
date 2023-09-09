@@ -1,7 +1,10 @@
 # ups
-DIY UPS VRLA Batteries Controller for ESP32C3, ESP32, M5Stack Core  
+DIY UPS VRLA Battery Controller for ESP32C3, ESP32, M5Stack Core  
 
 <font color="red">CONTENTS ON THIS REPOSITORY ARE UNDER DEVELOPMENT</font>  
+
+![DIY UPS System](/pictures/ups_m5stack.jpg)  
+Fig. DIY UPS System Using M5Stack Core and 12V 7.2Ah VRLA Battery
 
 ### WARNING
 I do not take any responsibility for safety.
