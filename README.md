@@ -20,6 +20,11 @@ For example, mishandling batteries may result in danger to your life or loss of 
 - ESP32
 - M5Stack Core
 
+## DIY UPS Schematic for M5Stack Core
+
+![Schematic](/pictures/schematic_m5stack.png)  
+Fig. Schematic of DIY UPS Battery Controller for M5Stack Core
+
 ## Planning
 
 ### Features
