@@ -81,7 +81,6 @@ IPAddress UDPTO_IP = {255,255,255,255};         // UDP宛先 IPアドレス
 
 int MODE = 0;       // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 float BAT_V = -0.1; // 電池電圧の測定結果
-uint32_t BAT_T = 0; // 前回の測定時刻
 
 float adc(int pin){
     delay(10);

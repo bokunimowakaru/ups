@@ -74,15 +74,15 @@ Both FETs are turned off to prevent over-discharge when the voltage drops below 
 
 |Pin	|割当	|接続	|	|Pin	|割当	|接続	|
 |-------|-------|-------|---|-------|-------|-------|
-|1	|3V3	|Power(3.3V)	|	|18	|IO 0	|NA	|
-|2	|EN	|Pull Up, RESET SW	|	|17	|IO 1	|USER SW	|
-|3	|IO 4	|	|	|16	|IO 2	|	|
-|4	|IO 5	|	|	|15	|IO 3	|	|
-|5	|IO 6	|	|	|14	|IO19	|	|
-|6	|IO 7	|	|	|13	|IO18	|NA	|
-|7	|IO 8	|Pull Up, RGB LED	|	|12	|TXD	|Serial RX	|
-|8	|IO 9	|Pull Up, BOOT SW	|	|11	|RXD	|Serial TX	|
-|9	|GND	|Power(GND)	|	|10	|IO10	|LED	|
+|1	|3V3	|<b>Power(3.3V)	|	|18	|IO 0	|NA(or GND)	|
+|2	|EN	|<s>Pull Up, RESET SW	|	|17	|IO 1	|<b>Outage Detector</b>(USER SW)	|
+|3	|IO 4	|<b>Charging FET	|	|16	|IO 2	|<b>Charger Voltage</b>(ADC1_2)	|
+|4	|IO 5	|<b>Discharging FET	|	|15	|IO 3	|<b>Battery Voltage</b>(ADC1_3)	|
+|5	|IO 6	|	|	|14	|IO19	|(I2C SCL)	|
+|6	|IO 7	|	|	|13	|IO18	|NA(or GND)	|
+|7	|IO 8	|Pull Up, RGB LED	|	|12	|TXD	|<s>Serial RX	|
+|8	|IO 9	|<s>Pull Up, BOOT SW	|	|11	|RXD	|<s>Serial TX	|
+|9	|GND	|<b>Power(GND)	|	|10	|IO10	|(I2C SDA)	|
 
 ## Functional Design for 12V VRLA Batteries
 
