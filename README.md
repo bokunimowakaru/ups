@@ -5,10 +5,10 @@ Network devices and servers connected to USB ports will continue to operate even
 
 <font color="red">CONTENTS ON THIS REPOSITORY ARE UNDER DEVELOPMENT</font>  
 
-![DIY UPS System](/pictures/ups_m5stack.jpg)  
+![DIY UPS System Example](/pictures/ups_m5stack.jpg)  
 Fig. DIY UPS System Using M5Stack Core and 12V 7.2Ah VRLA Battery
 
-![DIY UPS System](/pictures/ups_m5stack_outage.jpg)  
+![DIY UPS System in Power Outage](/pictures/ups_m5stack_outage.jpg)  
 Fig. Server Continuity Plan in Power Outage
 
 ### WARNING
@@ -26,6 +26,14 @@ For example, mishandling batteries may result in danger to your life or loss of 
 - for 12V VRLA Batteries
 - Level Meters show Charging/Discharging Power and Battery Voltage
 - USB Type A Female Output Ports, 5V 500mA
+- the Ambient; the web monitor service shows visible charts such as the sensor values
+- LINE Notify; a message notification service on the LINE platform
+
+![Monitor on Web Service Ambient](/pictures/ups_ambient02.png)  
+Fig. Web Service the Ambient for Monitoring Sensor Values
+
+![LINE Notify](/pictures/ups_line01.png)  
+Fig. LINE App Gets Message from the UPS
 
 ### Inputs of 2 ADCs used for Voltage And Current Measurement  
 One ADC is for battery voltage measurement.  

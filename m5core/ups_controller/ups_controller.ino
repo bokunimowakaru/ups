@@ -22,6 +22,10 @@ https://git.bokunimo.com/ups/
 #define OUTAGE_PIN 26                           // 停電検出 GPIO 26 ピン
 #define ADC_CHG_PIN 35                          // 充電出力 GPIO 35 ピン(ADC1_7)
 #define ADC_BAT_PIN 36                          // 電池電圧 GPIO 36 ピン(ADC1_0)
+#define ADC_CHG_DIV 12./(110.+12.)              // 抵抗分圧の比率
+// #define ADC_CHG_DIV 1.353 / 13.78            // 実測ADC電圧÷実測電池電圧
+#define ADC_BAT_DIV 12./(110.+12.)              // 抵抗分圧の比率
+// #define ADC_BAT_DIV 1.363 / 13.72            // 実測ADC電圧÷実測電池電圧
 #define SENSOR_R_OHM 1.8                        // 電流センサの抵抗値(Ω)
 
 /******************************************************************************
@@ -81,7 +85,11 @@ uint32_t BAT_T = 0; // 前回の測定時刻
 
 float adc(int pin){
     delay(10);
-    return analogReadMilliVolts(pin) * (110+12)/12./1000.;
+    float div = 0.;
+    if(pin == ADC_CHG_PIN) div = ADC_CHG_DIV;
+    if(pin == ADC_BAT_PIN) div = ADC_BAT_DIV;
+    if(div == 0.) return 0.;
+    return analogReadMilliVolts(pin) / div / 1000.;
 }
 
 void setup(){                                   // 起動時に一度だけ実行する関数
@@ -92,9 +100,9 @@ void setup(){                                   // 起動時に一度だけ実�
     pinMode(ADC_CHG_PIN, ANALOG);               // アナログ入力に
     pinMode(ADC_BAT_PIN, ANALOG);               // アナログ入力に
     M5.Lcd.setBrightness(31);                   // 輝度を下げる（省エネ化）
-    analogMeterInit("W",-5,5,"V",11,14);        //メータ初期化
+    analogMeterInit("W",-16,16,"V",11,14);      //メータ初期化
     analogMeterSetNames("Wattage","Battery");   // メータのタイトルを登録
-    lineGraphInit(-5,5);                        // グラフ初期化(縦軸の範囲指定)
+    lineGraphInit(-16,16);                      // グラフ初期化(縦軸の範囲指定)
     M5.Lcd.println("UPS VRLA Batteries Controller");
     WiFi.mode(WIFI_STA);                        // 無線LANをSTAモードに設定
 }
@@ -115,12 +123,15 @@ void loop(){                                    // 繰り返し実行する関�
         digitalWrite(FET_CHG_PIN, LOW);
         digitalWrite(FET_DIS_PIN, LOW);
         MODE = 0;                               // 停止
-        delay(100);                             // 電圧の安定待ち
+        delay(10);                              // 電圧の安定待ち
         BAT_V = adc(ADC_BAT_PIN);
         Serial.println("BAT_V="+String(BAT_V,2));
         digitalWrite(FET_CHG_PIN, HIGH);        // 電源が喪失するまでにON
         analogMeterNeedle(1,BAT_V);             // メータに電圧を表示
-        WiFi.begin(SSID,PASS);                  // 無線LANアクセスポイントへ接続
+        if(WiFi.status() != WL_CONNECTED){
+            Serial.println("WiFi.begin");
+            WiFi.begin(SSID,PASS);              // 無線LANアクセスポイントへ接続
+        }
     }else if(millis()%1000) return;             // 以下は1秒に1回だけ実行する
 
     /* 充電電流の測定 */
@@ -160,7 +171,7 @@ void loop(){                                    // 繰り返し実行する関�
             digitalWrite(FET_DIS_PIN, HIGH);
             break;
         case 2:                                 // 停電中
-            S = "OUTAGE "; 
+            S = "POWER OUTAGE "; 
             digitalWrite(FET_CHG_PIN, LOW);
             digitalWrite(FET_DIS_PIN, HIGH);
             break;
@@ -200,8 +211,8 @@ void loop(){                                    // 繰り返し実行する関�
 
     S = String(DEVICE);                         // 送信データSにデバイス名を代入
     S += String(chg_w,3) + ", ";                // 変数chg_wの値を追記
-    S += String(BAT_V,3) + ", ";                // 変数bat_vの値を追記
-    S += String(int(ac)) + ", ";                // 変数acの値を追記
+    S += String(BAT_V,3) + ", ";                // 変数BAT_Vの値を追記
+    S += String(int(!ac)) + ", ";               // 変数acの反転値を追記
     S += String(MODE);                          // 変数MODEの値を追記
     Serial.println(S);                          // 送信データSをシリアル出力表示
     WiFiUDP udp;                                // UDP通信用のインスタンスを定義
@@ -209,23 +220,26 @@ void loop(){                                    // 繰り返し実行する関�
     udp.println(S);                             // 送信データSをUDP送信
     udp.endPacket();                            // UDP送信の終了(実際に送信する)
 
-    HTTPClient http;                        	// HTTPリクエスト用インスタンス
-    http.setConnectTimeout(15000);          	// タイムアウトを15秒に設定する
-    String url;                             	// URLを格納する文字列変数を生成
-    if(!ac && strlen(LINE_TOKEN) > 42){     	// LINE_TOKEN設定時
+    HTTPClient http;                            // HTTPリクエスト用インスタンス
+    http.setConnectTimeout(15000);              // タイムアウトを15秒に設定する
+    http.setReuse(false);
+    String url;                                 // URLを格納する文字列変数を生成
+    if(!ac && strlen(LINE_TOKEN) > 42){         // LINE_TOKEN設定時
         url = "https://notify-api.line.me/api/notify";  // LINEのURLを代入
-        http.begin(url);                    	// HTTPリクエスト先を設定する
+        http.begin(url);                        // HTTPリクエスト先を設定する
         http.addHeader("Content-Type","application/x-www-form-urlencoded");
         http.addHeader("Authorization","Bearer " + String(LINE_TOKEN));
-        http.POST("message=停電中です。(" + S + ")");
-        http.end();                         	// HTTP通信を終了する
+        Serial.println(url);                    // 送信URLを表示
+        http.POST("message=停電中です。(" + S.substring(8) + ")");
+        http.end();                             // HTTP通信を終了する
+        while(http.connected()) delay(100);     // 送信完了の待ち時間処理
     }
     if(strcmp(Amb_Id,"00000") != 0){            // Ambient設定時に以下を実行
         S = "{\"writeKey\":\""+String(Amb_Key); // (項目)writeKey,(値)ライトキー
         S += "\",\"d1\":\"" + String(chg_w,3);  // (項目)d1,(値)chg_w
-        S += "\",\"d2\":\"" + String(BAT_V,3);  // (項目名)d2,(値)bat_v
-        S += "\",\"d3\":\"" + String(MODE);     // (項目名)d3,(値)MODE
-        S += "\",\"d4\":\"" + String(int(ac));  // (項目名)d3,(値)ac
+        S += "\",\"d2\":\"" + String(BAT_V,3);  // (項目名)d2,(値)BAT_V
+        S += "\",\"d3\":\"" + String(MODE>0?MODE:0); // (項目名)d3,(値)MODE
+        S += "\",\"d4\":\"" + String(int(!ac)); // (項目名)d4,(値)acの反転値
         S += "\"}";
         url = "http://ambidata.io/api/v2/channels/"+String(Amb_Id)+"/data";
         http.begin(url);                        // HTTPリクエスト先を設定する
@@ -233,13 +247,16 @@ void loop(){                                    // 繰り返し実行する関�
         Serial.println(url);                    // 送信URLを表示
         http.POST(S);                           // センサ値をAmbientへ送信する
         http.end();                             // HTTP通信を終了する
+        while(http.connected()) delay(100);     // 送信完了の待ち時間処理
     }
-    if(strcmp(LED_IP,"192.168.1.0")){       	// 子機IPアドレス設定時
+    if(strcmp(LED_IP,"192.168.1.0")){           // 子機IPアドレス設定時
         url = "http://" + String(LED_IP) + "/?L="; // アクセス先URL
-        url += String(ac ? 1 : 0);         		// true時1、false時0
-        http.begin(url);                    	// HTTPリクエスト先を設定する
-        http.GET();                         	// ワイヤレスLEDに送信する
-        http.end();                         	// HTTP通信を終了する
+        url += String(ac ? 1 : 0);              // true時1、false時0
+        http.begin(url);                        // HTTPリクエスト先を設定する
+        Serial.println(url);                    // 送信URLを表示
+        http.GET();                             // ワイヤレスLEDに送信する
+        http.end();                             // HTTP通信を終了する
+        while(http.connected()) delay(100);     // 送信完了の待ち時間処理
     }
     delay(100);                                 // 送信完了の待ち時間処理
     WiFi.disconnect();                          // Wi-Fiの切断
