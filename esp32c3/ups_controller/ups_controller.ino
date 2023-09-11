@@ -101,8 +101,9 @@ void setup(){                                   // 起動時に一度だけ実�
     }else{
         gpio_deep_sleep_hold_dis();
     }
-    pinMode(FET_CHG_PIN, OUTPUT);               // デジタル出力に
     pinMode(FET_DIS_PIN, OUTPUT);               // デジタル出力に
+    digitalWrite(FET_DIS_PIN, HIGH);            // 放電FETをON
+    pinMode(FET_CHG_PIN, OUTPUT);               // デジタル出力に
     pinMode(OUTAGE_PIN, INPUT);                 // デジタル入力に
     pinMode(ADC_CHG_PIN, ANALOG);               // アナログ入力に
     pinMode(ADC_BAT_PIN, ANALOG);               // アナログ入力に
@@ -114,12 +115,11 @@ void setup(){                                   // 起動時に一度だけ実�
     
     /* 測定 */
     ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
-    if(!ac){                                    // 停電時に放電に切り替える
-        digitalWrite(FET_CHG_PIN, LOW);
-        digitalWrite(FET_DIS_PIN, HIGH);
-    }else{                                      // 電源供給時に放電に切り替える
-        digitalWrite(FET_CHG_PIN, LOW);
-        digitalWrite(FET_DIS_PIN, LOW);
+    if(!ac){                                    // 停電時に
+        digitalWrite(FET_CHG_PIN, LOW);             // 充電FETをOFF
+    }else{                                      // 電源供給時に
+        digitalWrite(FET_CHG_PIN, LOW);             // 充電FETをOFF
+        digitalWrite(FET_DIS_PIN, LOW);             // 放電FETをOFF
     }
     delay(10);                                  // 電圧の安定待ち
     BAT_V = adc(ADC_BAT_PIN);
@@ -143,7 +143,60 @@ void loop(){                                    // 繰り返し実行する関�
     /* 充電電流の測定 */
     float chg_v = adc(ADC_CHG_PIN);
     float bat_v = adc(ADC_BAT_PIN);
-    float chg_w = chg_w = bat_v * (chg_v - bat_v) / SENSOR_R_OHM;
+    float chg_w = bat_v * (chg_v - bat_v) / SENSOR_R_OHM;
+    if(digitalRead(FET_CHG_PIN)){               // 充電時
+        Serial.print("chg_w="+String(chg_w,3)); // DEBUG
+        // VF=0.5として概算電流chg_iを求める
+        float chg_i = (chg_v - bat_v - 0.5) / SENSOR_R_OHM;
+        if(chg_i <0.) chg_i = 0.001;
+        // 概算電流値chg_iからVFを求める
+        // IRFU9024NPBF 1A:0.76V 0.1A:0.69V (Aは対数)
+        //      b = 0.76
+        //      0.69 = a * -1 + 0.76    -> a = 0.07
+        //      ∴VF = 0.07 * log10(chg_i) + 0.76
+        float diode_vf = 0.07 * log10(chg_i) + 0.76;
+        Serial.print(", diode_vf="+String(diode_vf,1)); // DEBUG
+        if(diode_vf <0.) diode_vf = 0.;
+        chg_i = (chg_v - bat_v - diode_vf) / SENSOR_R_OHM;
+        // 概算電流値chg_iからVDSを求める
+        // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
+        //               0:-0.699  -0.357:-1
+        //      b = -0.699
+        //      -1 = -0.357 * a - 0.699 -> a = (1 - 0.699) / 0.357 = 0.844
+        //      ∴VDS = 10^( 0.844 * log10(dis_i) - 0.699)
+        float fet_vds = pow(10, 0.844 * log10(chg_i) - 0.699);
+        Serial.print(", fet_vds="+String(fet_vds,1)); // DEBUG
+        if(chg_v - bat_v - diode_vf - fet_vds > 0){   // 充電が正の時
+            chg_w = bat_v * (chg_v - bat_v - diode_vf - fet_vds) / SENSOR_R_OHM;
+        }
+        Serial.println(" -> "+String(chg_w,3)); // DEBUG
+    }else{                                      // 放電時
+        // VF=0.5として概算電流dis_iを求める
+        Serial.print("dis_w="+String(-chg_w,3)); // DEBUG
+        float dis_i = (bat_v - chg_v - 0.5) / SENSOR_R_OHM;
+        if(dis_i <0.) dis_i = 0.001;
+        // 概算電流値dis_iからVFを求める
+        // 11EQS04 1A:0.53V 0.1A:0.37V (Aは対数)
+        //      0.53 = a * 0 + b        -> b = 0.53
+        //      0.37 = a * -1 + 0.53    -> a = 0.16
+        //      ∴VF = 0.16 * log10(dis_i) + 0.53
+        float diode_vf = 0.16 * log10(dis_i) + 0.53;
+        Serial.print(", diode_vf="+String(diode_vf,1)); // DEBUG
+        if(diode_vf <0.) diode_vf = 0.;
+        dis_i = (bat_v - chg_v - diode_vf) / SENSOR_R_OHM;
+        // 概算電流値dis_iからVDSを求める
+        // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
+        //               0:-0.699  -0.357:-1
+        //      b = -0.699
+        //      -1 = -0.357 * a - 0.699 -> a = (1 - 0.699) / 0.357 = 0.844
+        //      ∴VDS = 10^( 0.844 * log10(dis_i) - 0.699)
+        float fet_vds = pow(10, 0.844 * log10(dis_i) - 0.699);
+        Serial.print(", fet_vds="+String(fet_vds,1)); // DEBUG
+        if(bat_v - chg_v - diode_vf - fet_vds > 0){   // 放電が正の時
+            chg_w = - bat_v * (bat_v - chg_v - diode_vf - fet_vds) / SENSOR_R_OHM;
+        }
+        Serial.println(" -> "+String(-chg_w,3)); // DEBUG
+    }
     Serial.print("ac="+String(int(ac)));      // AC状態を表示
     Serial.print(", chg_v="+String(chg_v,3));
     Serial.print(", bat_v="+String(bat_v,3));
