@@ -94,7 +94,6 @@ float adc(int pin){
 }
 
 void setup(){                                   // 起動時に一度だけ実行する関数
-    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     if(FET_CHG_PIN == 4 && FET_DIS_PIN == 5){
         gpio_hold_dis(GPIO_NUM_4);
         gpio_hold_dis(GPIO_NUM_5);
@@ -103,6 +102,7 @@ void setup(){                                   // 起動時に一度だけ実�
     }
     pinMode(FET_DIS_PIN, OUTPUT);               // デジタル出力に
     digitalWrite(FET_DIS_PIN, HIGH);            // 放電FETをON
+    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     pinMode(FET_CHG_PIN, OUTPUT);               // デジタル出力に
     pinMode(OUTAGE_PIN, INPUT);                 // デジタル入力に
     pinMode(ADC_CHG_PIN, ANALOG);               // アナログ入力に
