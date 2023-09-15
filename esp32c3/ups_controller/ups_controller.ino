@@ -28,6 +28,8 @@ https://git.bokunimo.com/ups/
 #define ADC_BAT_DIV 12./(110.+12.)              // 抵抗分圧の比率
 // #define ADC_BAT_DIV 1.363 / 13.72            // 実測ADC電圧÷実測電池電圧
 #define SENSOR_R_OHM 1.8                        // 電流センサの抵抗値(Ω)
+#define MAX_CHD_CURRENT 2.0                     // 最大充電電流(  2.1 A)
+#define MAX_DIS_CURRENT 2.0                     // 最大放電電流(105.0 A)
 
 /******************************************************************************
  Ambient 設定
@@ -172,7 +174,9 @@ bool getChargingPower_w(){
     Bat_v = adc(ADC_BAT_PIN);
     Chg_w = Bat_v * (Chg_v - Bat_v) / SENSOR_R_OHM;
     float diode_vf=0., fet_vds=0., chg_i=0., dis_i=0;
-    Serial.print("Chg_w="+String(Chg_w,3));     // DEBUG
+    Serial.print("Chg="+String(Chg));           // DEBUG
+    Serial.print(", Dis="+String(Dis));         // DEBUG
+    Serial.print(", Chg0_w="+String(Chg_w,3));  // DEBUG
     if(Chg_v >= Bat_v){                         // 充電時
         if(!Dis){                               // 放電がOFFのとき
             // DisがOFFのときはFETの逆電圧防止DのVF分の電圧降下が生じる
@@ -185,11 +189,12 @@ bool getChargingPower_w(){
             //      0.69 = a * -1 + 0.76    -> a = 0.07
             //      ∴VF = 0.07 * log10(chg_i) + 0.76
             diode_vf = 0.07 * log10(chg_i) + 0.76;
-            Serial.print(", diode_vf="+String(diode_vf,1)); // DEBUG
+            Serial.print(", vf="+String(diode_vf,2)); // DEBUG
             if(diode_vf <0.) diode_vf = 0.;
         }
         // ダイオードのVFを考慮した電流値を求める
         chg_i = (Chg_v - Bat_v - diode_vf) / SENSOR_R_OHM;
+        Serial.print(", Chg1_w="+String(chg_i * Bat_v,3)); // DEBUG
         // 概算電流値chg_iからVDSを求める
         // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
         //               0:-0.699  -0.357:-1
@@ -199,7 +204,7 @@ bool getChargingPower_w(){
         fet_vds = pow(10, 0.844 * log10(chg_i) - 0.699);
         // DisがONのときは2つのFETで電圧降下が生じる
         if(Dis) fet_vds *= 2.;
-        Serial.print(", fet_vds="+String(fet_vds,2)); // DEBUG
+        Serial.print(", vds="+String(fet_vds,2)); // DEBUG
         // 算出したdiode_vfとfet_vdsから正確な電力値を求める
         if(Chg_v - Bat_v - diode_vf - fet_vds > 0){   // 充電が正の時
             Chg_w = Bat_v * (Chg_v - Bat_v - diode_vf - fet_vds) / SENSOR_R_OHM;
@@ -221,11 +226,12 @@ bool getChargingPower_w(){
                 //      0.37 = a * -1 + 0.53    -> a = 0.16
                 //      ∴VF = 0.16 * log10(dis_i) + 0.53
                 diode_vf = 0.16 * log10(dis_i) + 0.53;
-                Serial.print(", diode_vf="+String(diode_vf,1)); // DEBUG
+                Serial.print(", vf="+String(diode_vf,2)); // DEBUG
                 if(diode_vf <0.) diode_vf = 0.;
             }
             // ダイオードのVFを考慮した電流値を求める
             dis_i = (Bat_v - Chg_v - diode_vf) / SENSOR_R_OHM;
+            Serial.print(", Chg1_w="+String(-dis_i * Bat_v,3)); // DEBUG
             // 概算電流値dis_iからVDSを求める
             // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
             //               0:-0.699  -0.357:-1
@@ -235,16 +241,21 @@ bool getChargingPower_w(){
             fet_vds = pow(10, 0.844 * log10(dis_i) - 0.699);
             // ChgがONのときは2つのFETで電圧降下が生じる
             if(Chg) fet_vds *= 2.;
-            Serial.print(", fet_vds="+String(fet_vds,2)); // DEBUG
+            Serial.print(", vds="+String(fet_vds,2)); // DEBUG
             // 算出したdiode_vfとfet_vdsから正確な電力値を求める
             if(Bat_v - Chg_v - diode_vf - fet_vds > 0){   // 放電が正の時
-                Chg_w = - Bat_v * (Bat_v - Chg_v - diode_vf - fet_vds) / SENSOR_R_OHM;
+                Chg_w = -Bat_v * (Bat_v - Chg_v - diode_vf - fet_vds)
+                      / SENSOR_R_OHM;
             }else{
                 Chg_w = 0.;
             }
         }
     }
-    Serial.println(" -> Chg_w="+String(Chg_w,3)); // DEBUG
+    Serial.println(" -> Chg2_w="+String(Chg_w,3)); // DEBUG
+    if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w < -MAX_DIS_CURRENT){
+        MODE=MODE_FAULT;                        // 故障
+        setChgDisFET(MODE);                     // 故障
+    }
     if(fabs(Prev_w - Chg_w) <= 0.1) return true;
     Prev_w = Chg_w;
     return false;
@@ -293,15 +304,16 @@ void setup(){                                   // 起動時に一度だけ実�
     else if(Ac ==0 && MODE >= 0) MODE = MODE_OUTAGE; // 停電時に放電
     else if(MODE >= 0) MODE = MODE_CHG;         // 充電
     Serial.print(" -> " + String(MODE) + ": ");
+    Serial.println(getChgDisMode_S(MODE));      // 測定モードを表示
 
-    /* FET制御 */
-    Serial.println(getChgDisMode_S(MODE));      // 測定モードに切り替え
+    /* FET制御(電流測定モード) */
     delay(1);                                   // 切り替え待ち
     setChgDisFET(MODE_MEASURE);                 // 測定モードに切り替え
     delay(10);                                  // 切り替え待ち
 }
 
 void loop(){                                    // 繰り返し実行する関数
+    /* 電力測定 */
     while(!getChargingPower_w() && WiFi.status()!=WL_CONNECTED){
         led((millis()/50) % 10);                // (WS2812)LEDの点滅
         if(millis() > 10000) sleep();           // 10秒超過でスリープ
@@ -380,36 +392,18 @@ void sleep(){
     Serial.println("Sleep...");                 // 「Sleep」をシリアル出力表示
     if(FET_CHG_PIN == 4 && FET_DIS_PIN == 5){
         gpio_hold_en(GPIO_NUM_4);
-        gpio_hold_en(GPIO_NUM_5);
-        /** esp_err_t gpio_hold_en(gpio_num_t gpio_num);
+        gpio_hold_en(GPIO_NUM_5); /* esp_err_t gpio_hold_en(gpio_num_t gpio_num)
           * @brief Enable gpio pad hold function.
-          * When the pin is set to hold, the state is latched at that moment and will not change no matter how the internal
-          * signals change or how the IO MUX/GPIO configuration is modified (including input enable, output enable,
-          * output value, function, and drive strength values). It can be used to retain the pin state through a
-          * core reset and system reset triggered by watchdog time-out or Deep-sleep events.
-          * The gpio pad hold function works in both input and output modes, but must be output-capable gpios.
-          * If pad hold enabled:
-          *   in output mode: the output level of the pad will be force locked and can not be changed.
-          * The state of the digital gpio cannot be held during Deep-sleep, and it will resume to hold at its default pin state
-          * when the chip wakes up from Deep-sleep. If the digital gpio also needs to be held during Deep-sleep,
-          * `gpio_deep_sleep_hold_en` should also be called.
-          * Power down or call `gpio_hold_dis` will disable this function.
-          * @param gpio_num GPIO number, only support output-capable GPIOs
-          */
+          * When the pin is set to hold, the state is latched at that moment and
+          * will not change no matter how the internal signals change or how the
+          * IO MUX/GPIO configuration is modified (including input enable,
+          * output enable, output value, function, and drive strength values).*/
     }else{
-        gpio_deep_sleep_hold_en();
-        /** void gpio_deep_sleep_hold_en(void);
+        gpio_deep_sleep_hold_en(); /* void gpio_deep_sleep_hold_en(void)
           * @brief Enable all digital gpio pads hold function during Deep-sleep.
-          *
-          * Enabling this feature makes all digital gpio pads be at the holding state during Deep-sleep. The state of each pad
-          * holds is its active configuration (not pad's sleep configuration!).
-          *
-          * Note that this pad hold feature only works when the chip is in Deep-sleep mode. When the chip is in active mode,
-          * the digital gpio state can be changed freely even you have called this function.
-          *
-          * After this API is being called, the digital gpio Deep-sleep hold feature will work during every sleep process. You
-          * should call `gpio_deep_sleep_hold_dis` to disable this feature.
-          */
+          * Enabling this feature makes all digital gpio pads be at the holding
+          * state during Deep-sleep. The state of each pad holds is its active 
+          * configuration (not pad's sleep configuration!). */
     }
     esp_deep_sleep(SLEEP_P);                    // Deep Sleepモードへ移行
 }
