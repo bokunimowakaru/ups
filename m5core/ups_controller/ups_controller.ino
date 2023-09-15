@@ -298,33 +298,40 @@ void loop(){                                    // 繰り返し実行する関�
         }
         delay(10);                              // 電圧の安定待ち
         BAT_V = adc(ADC_BAT_PIN);
-	    digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
-	    digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
+        digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
+        digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
         analogMeterNeedle(1,BAT_V);             // メータに電圧を表示
 
-	    /* MODE制御 */
-	    Serial.println("BAT_V="+String(BAT_V,2));
-	    if(BAT_V > 14.7) MODE = MODE_FULL;          // 充電電圧の超過時に充電停止
-	    else if(BAT_V < 10.8) MODE = MODE_FAULT;    // 終止電圧未満でに故障停止
-	    else if(Ac ==0 && MODE >= 0) MODE = MODE_OUTAGE; // 停電時に放電
-	    else if(MODE >= 0) MODE = MODE_CHG;         // 充電
-	    Serial.print(" -> " + String(MODE) + ": ");
-	    Serial.println(getChgDisMode_S(MODE));      // 測定モードを表示
-
-	    /* FET制御(電流測定モード) */
-	    delay(1);                                   // 切り替え待ち
-	    setChgDisFET(MODE_MEASURE);                 // 測定モードに切り替え
-	    delay(10);                                  // 切り替え待ち
+        /* MODE制御 */
+        Serial.println("BAT_V="+String(BAT_V,2));
+        if(BAT_V > 14.7) MODE = MODE_FULL;          // 充電電圧の超過時に充電停止
+        else if(BAT_V < 10.8) MODE = MODE_FAULT;    // 終止電圧未満でに故障停止
+        else if(Ac ==0 && MODE >= 0) MODE = MODE_OUTAGE; // 停電時に放電
+        else if(MODE >= 0) MODE = MODE_CHG;         // 充電
+        Serial.print(" -> " + String(MODE) + ": ");
+        Serial.println(getChgDisMode_S(MODE));      // 測定モードを表示
+        setChgDisFET(MODE);                         // モードの切り替え
 
         if(WiFi.status() != WL_CONNECTED){
             Serial.println("WiFi.begin");
             WiFi.begin(SSID,PASS);              // 無線LANアクセスポイントへ接続
         }
     }
-    if(millis()%1000) return;             		// 以下は1秒に1回だけ実行する
+    if(millis()%1000) return;                   // 以下は1秒に1回だけ実行する
+
+    /* FET制御(電流測定モード) */
+    delay(1);                                   // 切り替え待ち
+    setChgDisFET(MODE_MEASURE);                 // 測定モードに切り替え
+    delay(10);                                  // 切り替え待ち
 
     /* 電力測定 */
     while(!getChargingPower_w()) delay(50);
+    setChgDisFET(MODE);                         // 現在のモードに設定
+    Serial.print("ac="+String(int(Ac)));        // AC状態を表示
+    Serial.print(", Chg_v="+String(Chg_v,3));
+    Serial.print(", Bat_v="+String(Bat_v,3));
+    Serial.print(", Chg_w="+String(Chg_w,3));
+    Serial.println(", mode="+String(MODE));
 
     /* 描画 */
     String S = getChgDisMode_S(MODE)+" "+String(Chg)+" "+String(Dis);
