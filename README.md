@@ -25,6 +25,32 @@ For example, mishandling batteries may result in danger to your life or loss of 
 ![Schematic](/pictures/schematic_m5stack.png)  
 Fig. Schematic of DIY UPS Battery Controller for M5Stack Core
 
+## Hardware Adjusting CV Charging Voltage
+This charging system use CV; constant voltage charging, with current limit resistor 1.8 Ohm.  
+The CV Charging Voltage is set using a 50k Ohm variable resistor by manually.
+Please adjust the output voltage is NOT over 13.8 V or under 10.8V. 
+For the example setting from 12.0 V to 13.8 V, if it is set 12.0 V, the backup time in outage might be shorter.
+But if sets 13.8V, the battery life might be shorter than 12.0 V setting.
+
+## Software Definition ADC_CHG_DIV and ADC_BAT_DIV
+The values of definition ADC_CHG_DIV and ADC_BAT_DIV need to be adjusted.  
+These are the voltage divided factors for the voltage measurements.  
+ADC_CHG_DIV is for the output voltage of NJM317F regulator for battery charging, and ADC_BAT_DIV is for the battery voltage.  
+If you put the resistors 100k, 10k, and 12k which have enough tolerance to measure, these values are caliculated as below.  
+
+	#define ADC_CHG_DIV 12./(110.+12.)  
+	#define ADC_BAT_DIV 12./(110.+12.)  
+
+But Generally, resistors have an error tolerance of +/-5% or +/-1%. So you need to adjust the definition values.
+
+1. Measure the output voltage of NJM317F, the value is for the denominator of ADC_CHG_DIV.  
+2. Measure the divided voltage of NJM317F by resistors at ADC_CHG. The value is for the numerator of ADC_CHG_DIV.  
+3. In a similar way, measure for ADC_BAT_DIV at BATT and ADC_BAT.  
+4. Edit the values like a below example.  
+
+	#define ADC_CHG_DIV 1.353 / 13.78  
+	#define ADC_BAT_DIV 1.363 / 13.72  
+
 ## Planning
 
 ### Features
@@ -56,8 +82,8 @@ Series R=47k Ohm and R=12k Ohm resistores devides the 16V output of AC adapter t
 
 ### Outputs of 2 GPIOs used for Switching Charging or Discharging  
 Two of the series FETs switches the connetcion modes of the charging, the discharging, and disconected mode.  
-In the charging mode, the both of FETs are turned On.  
-And in the discharging mode, turned Off the charging FET.  
+In the charging mode and the discharging mode, the both of FETs are turned On.  
+And if the voltage of batterry reached too high voltage for CV charging, turned Off the charging FET.  
 Both FETs are turned off to prevent over-discharge when the voltage drops below the end voltage.  
 
 ## Pinout for M5Stack Core
@@ -87,6 +113,8 @@ Both FETs are turned off to prevent over-discharge when the voltage drops below 
 ## Functional Design for 12V VRLA Batteries
 
 12V VRLA Batteries are structed series 6 cells, and each cells work if the cell volteges meet to 2.0V or between 1.8V to 2.3V. 
+This is CV charging system for UPS, so the charging voltage is set to 13.8V.
+And the stopping voltage for charging is set to 14.7, it's protected from unexpected higher voltege, such as breakdown circuits.
 
 |Mode	|Battery Voltege	|Function	|Condition	|
 |-------|-------------------|-----------|-----------|

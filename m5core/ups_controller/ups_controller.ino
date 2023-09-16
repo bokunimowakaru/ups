@@ -1,7 +1,21 @@
 /*******************************************************************************
-UPS VRLA Batteries Controller
+UPS VRLA Batteries Controller for M5Stack Core
+********************************************************************************
 
-https://git.bokunimo.com/ups/
+Usage and Design Information:
+    https://git.bokunimo.com/ups/
+
+Attention:
+    The values of definition ADC_CHG_DIV and ADC_BAT_DIV need to be adjusted.
+
+WARNING:
+    I do not take any responsibility for safety.
+    For example, mishandling batteries may result in danger to your life or
+    loss of your property.
+
+ご注意:
+    安全性に関して当方は一切の責任を負いません。
+    仮に電池の誤制御によって損害が発生した場合であっても補償いたしません。
 
                                           Copyright (c) 2023 Wataru KUNINO
 *******************************************************************************/
@@ -29,6 +43,9 @@ https://git.bokunimo.com/ups/
 #define SENSOR_R_OHM 1.8                        // 電流センサの抵抗値(Ω)
 #define MAX_CHD_CURRENT 2.0                     // 最大充電電流(  2.1 A)
 #define MAX_DIS_CURRENT 2.0                     // 最大放電電流(105.0 A)
+#define MAX_TOLERANCE_W 0.25                    // 電力測定の許容偏差(W)
+#define ALG_MAX_V 14.7                          // 電池の最大電圧(異常検出用)
+#define ALG_MIN_V 10.8                          // 電池の終止電圧(異常検出用)
 
 /******************************************************************************
  Ambient 設定
@@ -78,16 +95,18 @@ IPAddress UDPTO_IP = {255,255,255,255};         // UDP宛先 IPアドレス
 #define LED_IP "192.168.1.0"                    // LED搭載子のIPアドレス★要設定
 
 /******************************************************************************
- main
+ 動作モードの定義
  *****************************************************************************/
-
-/* 動作モードの定義 */
 #define MODE_FAULT  -2
 #define MODE_STOP   -1
 #define MODE_FULL    0
 #define MODE_CHG     1
 #define MODE_OUTAGE  2
 #define MODE_MEASURE 3
+
+/******************************************************************************
+ main
+ *****************************************************************************/
 
 int MODE = 0;       // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 float BAT_V = -0.1; // 電池電圧の測定結果
@@ -164,55 +183,78 @@ void setChgDisFET(int mode){
     return;
 }
 
+int algoModeControl(){
+    int mode = MODE;
+    /* MODE制御 */
+    Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
+    Serial.print("algoModeControl: AC="+String(Ac)+", BAT_V="+String(BAT_V,2));
+    if(BAT_V > ALG_MAX_V) mode = MODE_FULL;     // 充電電圧の超過時に充電停止
+    else if(BAT_V < ALG_MIN_V) mode = MODE_FAULT; // 終止電圧未満でに故障停止
+    else if(Ac == 0 && MODE >= 0) mode = MODE_OUTAGE; // 停電時に放電
+    else if(MODE >= 0) mode = MODE_CHG;         // 充電
+    Serial.print(", Mode=" + String(MODE));
+    Serial.print(" -> " + String(mode) + ": ");
+    Serial.println(getChgDisMode_S(mode));      // 測定モードを表示
+    return mode;
+}
+
 float Prev_w = 0.;                              // 前回測定値(繰り返し判定用)
 float Chg_v, Bat_v, Chg_w;
 
-bool getChargingPower_w(){
+bool getChargingPower_w(){                      // 測定の実行,応答=安定状態
     /* 充電／放電・電力の測定 */
     Chg_v = adc(ADC_CHG_PIN);
     Bat_v = adc(ADC_BAT_PIN);
     Chg_w = Bat_v * (Chg_v - Bat_v) / SENSOR_R_OHM;
     float diode_vf=0., fet_vds=0., chg_i=0., dis_i=0;
-    Serial.print("Chg="+String(Chg));           // DEBUG
-    Serial.print(", Dis="+String(Dis));         // DEBUG
-    Serial.print(", Chg0_w="+String(Chg_w,3));  // DEBUG
+    Serial.print("getChargingPower: Chg_v="+String(Chg)); // DEBUG
+    Serial.print("*"+String(Chg_v,2));          // DEBUG
+    Serial.print(", Dis_v="+String(Dis));       // DEBUG
+    Serial.print("*"+String(Bat_v,2));          // DEBUG
+    Serial.print(", C1_w="+String(Chg_w,3));    // DEBUG
+    
     if(Chg_v >= Bat_v){                         // 充電時
-        if(!Dis){                               // 放電がOFFのとき
-            // DisがOFFのときはFETの逆電圧防止DのVF分の電圧降下が生じる
-            // VF=0.5として概算電流chg_iを求める
-            chg_i = (Chg_v - Bat_v - 0.5) / SENSOR_R_OHM;
-            if(chg_i <0.) chg_i = 0.001;
-            // 概算電流値chg_iからVFを求める
-            // IRFU9024NPBF 1A:0.76V 0.1A:0.69V (Aは対数)
-            //      b = 0.76
-            //      0.69 = a * -1 + 0.76    -> a = 0.07
-            //      ∴VF = 0.07 * log10(chg_i) + 0.76
-            diode_vf = 0.07 * log10(chg_i) + 0.76;
-            Serial.print(", vf="+String(diode_vf,2)); // DEBUG
-            if(diode_vf <0.) diode_vf = 0.;
-        }
-        // ダイオードのVFを考慮した電流値を求める
-        chg_i = (Chg_v - Bat_v - diode_vf) / SENSOR_R_OHM;
-        Serial.print(", Chg1_w="+String(chg_i * Bat_v,3)); // DEBUG
-        // 概算電流値chg_iからVDSを求める
-        // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
-        //               0:-0.699  -0.357:-1
-        //      b = -0.699
-        //      -1 = -0.357 * a - 0.699 -> a = (1 - 0.699) / 0.357 = 0.844
-        //      ∴VDS = 10^( 0.844 * log10(dis_i) - 0.699)
-        fet_vds = pow(10, 0.844 * log10(chg_i) - 0.699);
-        // DisがONのときは2つのFETで電圧降下が生じる
-        if(Dis) fet_vds *= 2.;
-        Serial.print(", vds="+String(fet_vds,2)); // DEBUG
-        // 算出したdiode_vfとfet_vdsから正確な電力値を求める
-        if(Chg_v - Bat_v - diode_vf - fet_vds > 0){   // 充電が正の時
-            Chg_w = Bat_v * (Chg_v - Bat_v - diode_vf - fet_vds) / SENSOR_R_OHM;
-        }else{
+        if(!Chg){                               // 充電FETがOFF
+            // 電流が流れない一方で電位差が生じるので0に強制する
             Chg_w = 0.;
+        }else{
+            if(!Dis){                           // 放電がOFFのとき
+                // DisがOFFのときはFETの逆電圧防止DのVF分の電圧降下が生じる
+                // VF=0.5として概算電流chg_iを求める
+                chg_i = (Chg_v - Bat_v - 0.5) / SENSOR_R_OHM;
+                if(chg_i <0.) chg_i = 0.001;
+                // 概算電流値chg_iからVFを求める
+                // IRFU9024NPBF 1A:0.76V 0.1A:0.69V (Aは対数)
+                //      b = 0.76
+                //      0.69 = a * -1 + 0.76    -> a = 0.07
+                //      ∴VF = 0.07 * log10(chg_i) + 0.76
+                diode_vf = 0.07 * log10(chg_i) + 0.76;
+                Serial.print(", vf="+String(diode_vf,2)); // DEBUG
+                if(diode_vf <0.) diode_vf = 0.;
+            }
+            // ダイオードのVFを考慮した電流値を求める
+            chg_i = (Chg_v - Bat_v - diode_vf) / SENSOR_R_OHM;
+            Serial.print(", C2_w="+String(chg_i * Bat_v,3)); // DEBUG
+            // 概算電流値chg_iからVDSを求める
+            // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
+            //               0:-0.699  -0.357:-1
+            //      b = -0.699
+            //      -1 = -0.357 * a - 0.699 -> a = (1 - 0.699) / 0.357 = 0.844
+            //      ∴VDS = 10^( 0.844 * log10(dis_i) - 0.699)
+            fet_vds = pow(10, 0.844 * log10(chg_i) - 0.699);
+            // DisがONのときは2つのFETで電圧降下が生じる
+            if(Dis) fet_vds *= 2.;
+            Serial.print(", vds="+String(fet_vds,2)); // DEBUG
+            // 算出したdiode_vfとfet_vdsから正確な電力値を求める
+            if(Chg_v - Bat_v - diode_vf - fet_vds > 0){   // 充電が正の時
+                Chg_w = Bat_v * (Chg_v - Bat_v - diode_vf - fet_vds) / SENSOR_R_OHM;
+            }else{
+                Chg_w = 0.;
+            }
         }
     }else{ // Chg_v < Bat_v                     // 放電時
         if(!Dis){                               // 放電FETがOFF
-            // 原理的には電流が流れない(測定誤差はありうるが)
+            // 電流が流れない一方で電位差が生じるので0に強制する
             Chg_w = 0.;
         }else{
             if(!Chg){                           // 充電FETがOFF(外部ダイオード)
@@ -230,7 +272,7 @@ bool getChargingPower_w(){
             }
             // ダイオードのVFを考慮した電流値を求める
             dis_i = (Bat_v - Chg_v - diode_vf) / SENSOR_R_OHM;
-            Serial.print(", Chg1_w="+String(-dis_i * Bat_v,3)); // DEBUG
+            Serial.print(", C2_w="+String(-dis_i * Bat_v,3)); // DEBUG
             // 概算電流値dis_iからVDSを求める
             // IRFU9024NPBF 1A:0.2V 0.44A:0.1V (両対数)
             //               0:-0.699  -0.357:-1
@@ -250,23 +292,39 @@ bool getChargingPower_w(){
             }
         }
     }
-    Serial.println(" -> Chg2_w="+String(Chg_w,3)); // DEBUG
+    Serial.println(" -> C3_w="+String(Chg_w,3)); // DEBUG
     if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w < -MAX_DIS_CURRENT){
         MODE=MODE_FAULT;                        // 故障
         setChgDisFET(MODE);                     // 故障
     }
-    if(fabs(Prev_w - Chg_w) <= 0.1) return true;
+    if(fabs(Prev_w - Chg_w) <= MAX_TOLERANCE_W) return true;
     Prev_w = Chg_w;
     return false;
 }
 
+float getBatteryVoltage_v(){
+    /* 電池電圧の測定 */
+    Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
+    if(!Ac){                                    // 停電時に
+        digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+    }else{                                      // 電源供給時に
+        digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+        digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
+    }
+    delay(1);                                   // 電圧の安定待ち
+    float bat_v = adc(ADC_BAT_PIN);
+    digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
+    digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
+    return bat_v;
+}
+
 void setup(){                                   // 起動時に一度だけ実行する関数
     M5.begin();                                 // M5Stack用ライブラリの起動
-    pinMode(FET_CHG_PIN, OUTPUT);               // デジタル出力に
-    pinMode(FET_DIS_PIN, OUTPUT);               // デジタル出力に
-    pinMode(OUTAGE_PIN, INPUT);                 // デジタル入力に
-    pinMode(ADC_CHG_PIN, ANALOG);               // アナログ入力に
-    pinMode(ADC_BAT_PIN, ANALOG);               // アナログ入力に
+    pinMode(FET_CHG_PIN, OUTPUT);               // 充電FETをデジタル出力に
+    pinMode(FET_DIS_PIN, OUTPUT);               // 放電FETをデジタル出力に
+    pinMode(OUTAGE_PIN, INPUT);                 // 停電検出をデジタル入力に
+    pinMode(ADC_CHG_PIN, ANALOG);               // 充電側電圧をアナログ入力に
+    pinMode(ADC_BAT_PIN, ANALOG);               // 電池側電圧をアナログ入力に
     M5.Lcd.setBrightness(31);                   // 輝度を下げる（省エネ化）
     analogMeterInit("W",-16,16,"V",10,14);      //メータ初期化
     analogMeterSetNames("Wattage","Battery");   // メータのタイトルを登録
@@ -278,46 +336,29 @@ void setup(){                                   // 起動時に一度だけ実�
 
 void loop(){                                    // 繰り返し実行する関数
     M5.update();                                // ボタン状態の取得
-    Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
-
-    delay(1);                                   // ボタンの誤作動防止
+    delay(0);                                   // ボタンの誤作動防止
     int btn=M5.BtnA.wasPressed()+2*M5.BtnB.wasPressed()+4*M5.BtnC.wasPressed();
     switch(btn){
-        case 1: MODE = -1; break;               // 停止
-        case 2: MODE = 3; break;                // 測定
-        case 4: MODE = 1; break;                // 充電
+        Serial.println("Button Pressed = "+String(btn, BIN));
+        case 1: MODE = MODE_MEASURE; break;     // 測定・送信
+        case 2: MODE = MODE_STOP; break;        // 停止
+        case 4: MODE = MODE_CHG; break;         // 充電
         default: btn = 0; break;
     }
-    if(millis()%(SLEEP_P/1000) == 0 || BAT_V < 0 || MODE == 3){
-        /* 電池電圧の測定 */
-        if(!Ac){                                    // 停電時に
-            digitalWrite(FET_CHG_PIN, LOW);             // 充電FETをOFF
-        }else{                                      // 電源供給時に
-            digitalWrite(FET_CHG_PIN, LOW);             // 充電FETをOFF
-            digitalWrite(FET_DIS_PIN, LOW);             // 放電FETをOFF
-        }
-        delay(10);                              // 電圧の安定待ち
-        BAT_V = adc(ADC_BAT_PIN);
-        digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
-        digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
+    if(millis()%1000) return;                   // 以下は1秒に1回だけ実行する
+    if((millis()/1000)%(SLEEP_P/1000000)==0 || BAT_V<0 || MODE==MODE_MEASURE){
+        BAT_V = getBatteryVoltage_v();          // 電池電圧を取得
+        MODE = algoModeControl();               // モード値の変更
+        setChgDisFET(MODE);                     // モードに応じたFET制御
         analogMeterNeedle(1,BAT_V);             // メータに電圧を表示
-
-        /* MODE制御 */
-        Serial.println("BAT_V="+String(BAT_V,2));
-        if(BAT_V > 14.7) MODE = MODE_FULL;          // 充電電圧の超過時に充電停止
-        else if(BAT_V < 10.8) MODE = MODE_FAULT;    // 終止電圧未満でに故障停止
-        else if(Ac ==0 && MODE >= 0) MODE = MODE_OUTAGE; // 停電時に放電
-        else if(MODE >= 0) MODE = MODE_CHG;         // 充電
-        Serial.print(" -> " + String(MODE) + ": ");
-        Serial.println(getChgDisMode_S(MODE));      // 測定モードを表示
-        setChgDisFET(MODE);                         // モードの切り替え
-
         if(WiFi.status() != WL_CONNECTED){
-            Serial.println("WiFi.begin");
+            Serial.println("Wi-Fi begin");
             WiFi.begin(SSID,PASS);              // 無線LANアクセスポイントへ接続
         }
     }
-    if(millis()%1000) return;                   // 以下は1秒に1回だけ実行する
+
+    /* MODE制御 */
+    MODE = algoModeControl();                   // モード値の変更
 
     /* FET制御(電流測定モード) */
     delay(1);                                   // 切り替え待ち
@@ -327,11 +368,13 @@ void loop(){                                    // 繰り返し実行する関�
     /* 電力測定 */
     while(!getChargingPower_w()) delay(50);
     setChgDisFET(MODE);                         // 現在のモードに設定
+    /*
     Serial.print("ac="+String(int(Ac)));        // AC状態を表示
     Serial.print(", Chg_v="+String(Chg_v,3));
     Serial.print(", Bat_v="+String(Bat_v,3));
     Serial.print(", Chg_w="+String(Chg_w,3));
     Serial.println(", mode="+String(MODE));
+    /*
 
     /* 描画 */
     String S = getChgDisMode_S(MODE)+" "+String(Chg)+" "+String(Dis);
@@ -348,6 +391,7 @@ void loop(){                                    // 繰り返し実行する関�
     }
     M5.Lcd.drawCentreString(S, 160, 212, 4);    // 文字列を表示
     if(WiFi.status() != WL_CONNECTED) return;   // Wi-Fi未接続のときに戻る
+    Serial.println("Wi-Fi connected");
 
     /* データ送信 */
     M5.Lcd.fillRect(0, 202, 320, 8, BLACK);     // 表示部の背景を塗る
@@ -405,6 +449,7 @@ void loop(){                                    // 繰り返し実行する関�
     }
     delay(100);                                 // 送信完了の待ち時間処理
     WiFi.disconnect();                          // Wi-Fiの切断
+    Serial.println("Wi-Fi disconnected");
 }
 
 /******************************************************************************
