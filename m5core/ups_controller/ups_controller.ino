@@ -309,6 +309,9 @@ float getBatteryVoltage_v(){
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
     }else{                                      // 電源供給時に
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+        // 下記の放電FETをOFFにすると電圧測定の正確性が増すが、
+        // 完全に電源喪失する場合がある。
+    //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
         digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(1);                                   // 電圧の安定待ち
