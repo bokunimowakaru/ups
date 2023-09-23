@@ -321,13 +321,16 @@ float getBatteryVoltage_v(){
         // 停電と電圧測定時が重なると、充電FETの逆流ダイオードの電圧降下によって
         // 完全に電源喪失する場合があるかもしれません。もし、外部にダイオードを
         // 追加しても改善できない場合は、次の行を削除してください。
-        // ただし、削除すると測定の正確性が、少し低下する場合があります
+        // ただし、削除すると電池電圧測定時に電池内部抵抗の影響を受けます。
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
     }else{                                      // 電源供給時に
         led(0,20,0);                            // (WS2812)LEDを緑色で点灯
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
-        // 放電FETのOFFを有効にすると電圧測定の正確性が増すが、
-        // 測定中に停電したときに完全に電源喪失する。
+        // Setting the FET_DIS_PIN of the discharge FET to LOW in the line below
+        // increases the accuracy of the voltage measurement. But it may be
+        // caused to lose all power during measurement in an outage condition.
+        // 下記の放電FETのOFFを有効にすると電圧測定の正確性が増しますが、
+        // 測定中に停電したときに完全に電源喪失する場合があります。
     //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(2);                                   // 電圧の安定待ち
@@ -336,7 +339,6 @@ float getBatteryVoltage_v(){
     digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
     return bat_v;
 }
-
 
 void sendToLine(HTTPClient &http, String message){
     String url = "https://notify-api.line.me/api/notify"; // LINEのURLを代入

@@ -128,24 +128,22 @@ void analogMeterInit()
     int x3 = sx2 * M_SIZE*100 + M_SIZE*120;
     int y3 = sy2 * M_SIZE*100 + M_SIZE*140;
 
-    // Yellow zone limits
+    // zone limits
     if (i >= -50 && i < -25) {
       M5.Lcd.fillTriangle(x0, y0, x1, y1, x2, y2, TFT_YELLOW);
       M5.Lcd.fillTriangle(x1, y1, x2, y2, x3, y3, TFT_YELLOW);
       M5.Lcd.fillTriangle(x0+160, y0, x1+160, y1, x2+160, y2, TFT_ORANGE);
       M5.Lcd.fillTriangle(x1+160, y1, x2+160, y2, x3+160, y3, TFT_ORANGE);
     }
-
-    // Green zone limits
     if (i >= -25 && i < 25) {
       M5.Lcd.fillTriangle(x0, y0, x1, y1, x2, y2, TFT_GREEN);
       M5.Lcd.fillTriangle(x1, y1, x2, y2, x3, y3, TFT_GREEN);
     }
-
-    // Orange zone limits
     if (i >= 25 && i < 50) {
       M5.Lcd.fillTriangle(x0, y0, x1, y1, x2, y2, TFT_ORANGE);
       M5.Lcd.fillTriangle(x1, y1, x2, y2, x3, y3, TFT_ORANGE);
+    }
+    if (i >= 0 && i < 50) {
       M5.Lcd.fillTriangle(x0+160, y0, x1+160, y1, x2+160, y2, TFT_GREEN);
       M5.Lcd.fillTriangle(x1+160, y1, x2+160, y2, x3+160, y3, TFT_GREEN);
     }

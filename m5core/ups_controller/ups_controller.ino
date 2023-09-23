@@ -111,6 +111,9 @@ IPAddress UDPTO_IP = {255,255,255,255};         // UDP宛先 IPアドレス
  main
  *****************************************************************************/
 
+RTC_DATA_ATTR int line_stat = 0; // LINEへの送信状態
+                    // 0:未送信 1:停電送信済み -2:故障送信済み -1:停止送信済
+
 int MODE = 0;       // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 float BAT_V = -0.1; // 電池電圧の測定結果
 bool Ac;            // ACアダプタからの電源供給状態
@@ -309,14 +312,18 @@ float getBatteryVoltage_v(){
     /* 電池電圧の測定 */
     Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
     if(!Ac){                                    // 停電時の処理
-        // 充電FETのOFFを有効にすると電圧測定の正確性が増すが、
-        // 停電時に完全に電源喪失するリスクが高まる。
-        // （充電FETの逆流ダイオードの電圧降下によって）
-    //  digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+        // 停電と電圧測定時が重なると、充電FETの逆流ダイオードの電圧降下によって
+        // 完全に電源喪失する場合があるかもしれません。もし、外部にダイオードを
+        // 追加しても改善できない場合は、次の行を削除してください。
+        // ただし、削除すると電池電圧測定時に電池内部抵抗の影響を受けます。
+        digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
     }else{                                      // 電源供給時に
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
-        // 放電FETのOFFを有効にすると電圧測定の正確性が増すが、
-        // 測定中に停電したときに完全に電源喪失する。
+        // Setting the FET_DIS_PIN of the discharge FET to LOW in the line below
+        // increases the accuracy of the voltage measurement. But it may be
+        // caused to lose all power during measurement in an outage condition.
+        // 下記の放電FETのOFFを有効にすると電圧測定の正確性が増しますが、
+        // 測定中に停電したときに完全に電源喪失する場合があります。
     //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(1);                                   // 電圧の安定待ち
@@ -342,9 +349,20 @@ void setup(){                                   // 起動時に一度だけ実�
     WiFi.mode(WIFI_STA);                        // 無線LANをSTAモードに設定
 }
 
+void sendToLine(HTTPClient &http, String message){
+    String url = "https://notify-api.line.me/api/notify"; // LINEのURLを代入
+    http.begin(url);                            // HTTPリクエスト先を設定する
+    http.addHeader("Content-Type","application/x-www-form-urlencoded");
+    http.addHeader("Authorization","Bearer " + String(LINE_TOKEN));
+    Serial.println(url);                        // 送信URLを表示
+    http.POST("message=" + message);
+    http.end();                                 // HTTP通信を終了する
+    while(http.connected()) delay(100);         // 送信完了の待ち時間処理
+}
+
 void loop(){                                    // 繰り返し実行する関数
     M5.update();                                // ボタン状態の取得
-    delay(0);                                   // ボタンの誤作動防止
+    delay(1);                                   // ボタンの誤作動防止
     int btn=M5.BtnA.wasPressed()+2*M5.BtnB.wasPressed()+4*M5.BtnC.wasPressed();
     switch(btn){
         Serial.println("Button Pressed = "+String(btn, BIN));
@@ -353,8 +371,9 @@ void loop(){                                    // 繰り返し実行する関�
         case 4: MODE = MODE_CHG; break;         // 充電
         default: btn = 0; break;
     }
-    if(millis()%1000) return;                   // 以下は1秒に1回だけ実行する
-    if((millis()/1000)%(SLEEP_P/1000000)==0 || BAT_V<0 || MODE==MODE_MEASURE){
+    unsigned long t = millis();
+    if(t%1000) return;                          // 以下は1秒に1回だけ実行する
+    if((t/1000)%(SLEEP_P/1000000)==0 || BAT_V<0 || MODE==MODE_MEASURE){
         BAT_V = getBatteryVoltage_v();          // 電池電圧を取得
         MODE = algoModeControl();               // モード値の変更
         setChgDisFET(MODE);                     // モードに応じたFET制御
@@ -382,7 +401,7 @@ void loop(){                                    // 繰り返し実行する関�
     Serial.print(", Bat_v="+String(Bat_v,3));
     Serial.print(", Chg_w="+String(Chg_w,3));
     Serial.println(", mode="+String(MODE));
-    /*
+    */
 
     /* 描画 */
     String S = getChgDisMode_S(MODE)+" "+String(Chg)+" "+String(Dis);
@@ -420,17 +439,30 @@ void loop(){                                    // 繰り返し実行する関�
     HTTPClient http;                            // HTTPリクエスト用インスタンス
     http.setConnectTimeout(15000);              // タイムアウトを15秒に設定する
     http.setReuse(false);
-    String url;                                 // URLを格納する文字列変数を生成
-    if(!Ac && strlen(LINE_TOKEN) > 42){         // LINE_TOKEN設定時
-        url = "https://notify-api.line.me/api/notify";  // LINEのURLを代入
-        http.begin(url);                        // HTTPリクエスト先を設定する
-        http.addHeader("Content-Type","application/x-www-form-urlencoded");
-        http.addHeader("Authorization","Bearer " + String(LINE_TOKEN));
-        Serial.println(url);                    // 送信URLを表示
-        http.POST("message=停電中です。(" + S.substring(8) + ")");
-        http.end();                             // HTTP通信を終了する
-        while(http.connected()) delay(100);     // 送信完了の待ち時間処理
+    if(strlen(LINE_TOKEN) > 42){                // LINE_TOKEN設定時
+        if(!Ac && !line_stat){                  // 停電時
+            sendToLine(http, "停電中です。(" + S.substring(8) + ")");
+            line_stat = 1;                      // 停電中を送信済み
+        }else if(Ac && line_stat == 1){
+            sendToLine(http, "復電しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 停電中を送信済み
+        }
+        if(MODE == MODE_FAULT && !line_stat){
+            sendToLine(http, "故障中です。(" + S.substring(8) + ")");
+            line_stat = MODE_FAULT;             // 故障中を送信済み
+        }else if(line_stat == MODE_FAULT){
+            sendToLine(http, "復帰しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 故障復帰を送信済み
+        }
+        if(MODE == MODE_STOP && !line_stat){
+            sendToLine(http, "手動停止中です。(" + S.substring(8) + ")");
+            line_stat = MODE_STOP;              // 故障中を送信済み
+        }else if(line_stat == MODE_STOP){
+            sendToLine(http, "再開しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 故障復帰を送信済み
+        }
     }
+    String url;                                 // URLを格納する文字列変数を生成
     if(strcmp(Amb_Id,"00000") != 0){            // Ambient設定時に以下を実行
         S = "{\"writeKey\":\""+String(Amb_Key); // (項目)writeKey,(値)ライトキー
         S += "\",\"d1\":\"" + String(Chg_w,3);  // (項目)d1,(値)chg_w
