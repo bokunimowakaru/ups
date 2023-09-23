@@ -17,6 +17,9 @@ WARNING:
     安全性に関して当方は一切の責任を負いません。
     仮に電池の誤制御によって損害が発生した場合であっても補償いたしません。
 
+CSVxUDP Format:
+    myups_5, charging(W), battery(V), Outage, UPS mode⏎
+
                                           Copyright (c) 2023 Wataru KUNINO
 *******************************************************************************/
 
@@ -109,6 +112,9 @@ IPAddress UDPTO_IP = {255,255,255,255};         // UDP宛先 IPアドレス
  main
  *****************************************************************************/
 
+RTC_DATA_ATTR int line_stat = 0; // LINEへの送信状態
+                    // 0:未送信 1:停電送信済み -2:故障送信済み -1:停止送信済
+
 int MODE = 0;       // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 float BAT_V = -0.1; // 電池電圧の測定結果
 bool Ac;            // ACアダプタからの電源供給状態
@@ -127,7 +133,7 @@ String getChgDisMode_S(int mode){
     String S;
     switch(mode){
         case MODE_FAULT:                        // 故障停止(過放電)
-            S = "BATTERY FAULT ";
+            S = "BATTERY EXHAUSTION ";
             break;
         case MODE_STOP:                         // 手動停止(未使用)
             S = "STOP ";
@@ -154,18 +160,22 @@ void setChgDisFET(int mode){
         case MODE_FAULT:                        // 故障停止(過放電)
             Chg = 0;
             Dis = 0;
+            led(20,0,0);                        // (WS2812)LEDを赤色に
             break;
         case MODE_STOP:                         // 手動停止(未使用)
             Chg = 0;
             Dis = 0;
+            led(20,0,0);                        // (WS2812)LEDを赤色に
             break;
         case MODE_CHG:                          // 充電中
             Chg = 1;
             Dis = 1;
+            led(0,20,0);                        // (WS2812)LEDを緑色に
             break;
         case MODE_OUTAGE:                       // 停電中
             Chg = 1;
             Dis = 1;
+            led(10,10,0);                       // (WS2812)LEDを黄色に
             break;
         case MODE_MEASURE:                      // 測定中
             if(MODE >0){
@@ -177,6 +187,7 @@ void setChgDisFET(int mode){
         default:
             Chg = 0;
             Dis = 1;
+            led(20,0,20);                       // (WS2812)LEDを紫色に
             break;
     }
     digitalWrite(FET_CHG_PIN, Chg);
@@ -294,9 +305,8 @@ bool getChargingPower_w(){                      // 測定の実行,応答=安定
         }
     }
     Serial.println(" -> C3_w="+String(Chg_w,3)); // DEBUG
-    if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w < -MAX_DIS_CURRENT){
+    if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w/Bat_v < -MAX_DIS_CURRENT){
         MODE=MODE_FAULT;                        // 故障
-        setChgDisFET(MODE);                     // 故障
     }
     if(fabs(Prev_w - Chg_w) <= MAX_TOLERANCE_W) return true;
     Prev_w = Chg_w;
@@ -306,12 +316,18 @@ bool getChargingPower_w(){                      // 測定の実行,応答=安定
 float getBatteryVoltage_v(){
     /* 電池電圧の測定 */
     Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
-    if(!Ac){                                    // 停電時に
+    if(!Ac){                                    // 停電時の処理
+        led(10,10,0);                           // (WS2812)LEDを黄色で点灯
+        // 停電と電圧測定時が重なると、充電FETの逆流ダイオードの電圧降下によって
+        // 完全に電源喪失する場合があるかもしれません。もし、外部にダイオードを
+        // 追加しても改善できない場合は、次の行を削除してください。
+        // ただし、削除すると測定の正確性が、少し低下する場合があります
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
     }else{                                      // 電源供給時に
+        led(0,20,0);                            // (WS2812)LEDを緑色で点灯
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
-        // 下記の放電FETをOFFにすると電圧測定の正確性が増すが、
-        // 完全に電源喪失する場合がある。
+        // 放電FETのOFFを有効にすると電圧測定の正確性が増すが、
+        // 測定中に停電したときに完全に電源喪失する。
     //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(2);                                   // 電圧の安定待ち
@@ -321,19 +337,31 @@ float getBatteryVoltage_v(){
     return bat_v;
 }
 
+
+void sendToLine(HTTPClient &http, String message){
+    String url = "https://notify-api.line.me/api/notify"; // LINEのURLを代入
+    http.begin(url);                            // HTTPリクエスト先を設定する
+    http.addHeader("Content-Type","application/x-www-form-urlencoded");
+    http.addHeader("Authorization","Bearer " + String(LINE_TOKEN));
+    Serial.println(url);                        // 送信URLを表示
+    http.POST("message=" + message);
+    http.end();                                 // HTTP通信を終了する
+    while(http.connected()) delay(100);         // 送信完了の待ち時間処理
+}
+
 void setup(){                                   // 起動時に一度だけ実行する関数
     Chg = digitalRead(FET_CHG_PIN);
     Dis = digitalRead(FET_DIS_PIN);
+    pinMode(FET_CHG_PIN, OUTPUT);               // 充電FETをデジタル出力に
+    digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
+    pinMode(FET_DIS_PIN, OUTPUT);               // 放電FETをデジタル出力に
+    digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
     if(FET_CHG_PIN == 4 && FET_DIS_PIN == 5){
         gpio_hold_dis(GPIO_NUM_4);
         gpio_hold_dis(GPIO_NUM_5);
     }else{
         gpio_deep_sleep_hold_dis();
     }
-    pinMode(FET_CHG_PIN, OUTPUT);               // 充電FETをデジタル出力に
-    digitalWrite(FET_CHG_PIN, Chg);             // 充電FETを復帰
-    pinMode(FET_DIS_PIN, OUTPUT);               // 放電FETをデジタル出力に
-    digitalWrite(FET_DIS_PIN, Dis);             // 放電FETを復帰
     led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     pinMode(OUTAGE_PIN, INPUT);                 // 停電検出をデジタル入力に
     pinMode(ADC_CHG_PIN, ANALOG);               // 充電側電圧をアナログ入力に
@@ -359,14 +387,11 @@ void loop(){                                    // 繰り返し実行する関�
     /* 電力測定 */
     while(!getChargingPower_w() && WiFi.status()!=WL_CONNECTED){
         led((millis()/50) % 10);                // (WS2812)LEDの点滅
-        if(millis() > 10000) sleep();           // 10秒超過でスリープ
+        if(millis() > 10000){                   // 10秒超過
+            setChgDisFET(MODE);                 // 現在のモードに設定
+            sleep();                            // スリープ
+        }
         delay(50);                              // 待ち時間処理
-    }
-    setChgDisFET(MODE);                         // 現在のモードに設定
-    if(!Ac){                                    // 停電時
-        led(0,10,10);                           // (WS2812)LEDを黄色で点灯
-    }else{                                      // 電源供給時
-        led(0,20,0);                            // (WS2812)LEDを緑色で点灯
     }
     /*
     Serial.print("ac="+String(int(Ac)));        // AC状態を表示
@@ -391,23 +416,36 @@ void loop(){                                    // 繰り返し実行する関�
     HTTPClient http;                            // HTTPリクエスト用インスタンス
     http.setConnectTimeout(15000);              // タイムアウトを15秒に設定する
     http.setReuse(false);
-    String url;                                 // URLを格納する文字列変数を生成
-    if(!Ac && strlen(LINE_TOKEN) > 42){         // LINE_TOKEN設定時
-        url = "https://notify-api.line.me/api/notify";  // LINEのURLを代入
-        http.begin(url);                        // HTTPリクエスト先を設定する
-        http.addHeader("Content-Type","application/x-www-form-urlencoded");
-        http.addHeader("Authorization","Bearer " + String(LINE_TOKEN));
-        Serial.println(url);                    // 送信URLを表示
-        http.POST("message=停電中です。(" + S.substring(8) + ")");
-        http.end();                             // HTTP通信を終了する
-        while(http.connected()) delay(100);     // 送信完了の待ち時間処理
+    if(strlen(LINE_TOKEN) > 42){                // LINE_TOKEN設定時
+        if(!Ac && !line_stat){                  // 停電時
+            sendToLine(http, "停電中です。(" + S.substring(8) + ")");
+            line_stat = 1;                      // 停電中を送信済み
+        }else if(Ac && line_stat == 1){
+            sendToLine(http, "復電しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 停電中を送信済み
+        }
+        if(MODE == MODE_FAULT && !line_stat){
+            sendToLine(http, "故障中です。(" + S.substring(8) + ")");
+            line_stat = MODE_FAULT;             // 故障中を送信済み
+        }else if(line_stat == MODE_FAULT){
+            sendToLine(http, "復帰しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 故障復帰を送信済み
+        }
+        if(MODE == MODE_STOP && !line_stat){
+            sendToLine(http, "手動停止中です。(" + S.substring(8) + ")");
+            line_stat = MODE_STOP;              // 故障中を送信済み
+        }else if(line_stat == MODE_STOP){
+            sendToLine(http, "再開しました。(" + S.substring(8) + ")");
+            line_stat = 0;                      // 故障復帰を送信済み
+        }
     }
+    String url;                                 // URLを格納する文字列変数を生成
     if(strcmp(Amb_Id,"00000") != 0){            // Ambient設定時に以下を実行
         S = "{\"writeKey\":\""+String(Amb_Key); // (項目)writeKey,(値)ライトキー
         S += "\",\"d1\":\"" + String(Chg_w,3);  // (項目)d1,(値)Chg_w
         S += "\",\"d2\":\"" + String(BAT_V,3);  // (項目名)d2,(値)BAT_V
-        S += "\",\"d3\":\"" + String(MODE>0?MODE:0); // (項目名)d3,(値)MODE
-        S += "\",\"d4\":\"" + String(int(!Ac)); // (項目名)d4,(値)acの反転値
+        S += "\",\"d3\":\"" + String(int(!Ac)); // (項目名)d3,(値)acの反転値
+        S += "\",\"d4\":\"" + String(MODE);     // (項目名)d4,(値)MODE
         S += "\"}";
         url = "http://ambidata.io/api/v2/channels/"+String(Amb_Id)+"/data";
         http.begin(url);                        // HTTPリクエスト先を設定する
@@ -428,6 +466,7 @@ void loop(){                                    // 繰り返し実行する関�
     }
     delay(100);                                 // 送信完了の待ち時間処理
     WiFi.disconnect();                          // Wi-Fiの切断
+    setChgDisFET(MODE);                         // 現在のモードに設定
     sleep();
 }
 

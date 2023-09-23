@@ -17,6 +17,9 @@ WARNING:
     安全性に関して当方は一切の責任を負いません。
     仮に電池の誤制御によって損害が発生した場合であっても補償いたしません。
 
+CSVxUDP Format:
+    myups_5, charging(W), battery(V), Outage, UPS mode⏎
+
                                           Copyright (c) 2023 Wataru KUNINO
 *******************************************************************************/
 
@@ -126,7 +129,7 @@ String getChgDisMode_S(int mode){
     String S;
     switch(mode){
         case MODE_FAULT:                        // 故障停止(過放電)
-            S = "BATTERY FAULT ";
+            S = "BATTERY EXHAUSTION ";
             break;
         case MODE_STOP:                         // 手動停止(未使用)
             S = "STOP ";
@@ -293,7 +296,7 @@ bool getChargingPower_w(){                      // 測定の実行,応答=安定
         }
     }
     Serial.println(" -> C3_w="+String(Chg_w,3)); // DEBUG
-    if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w < -MAX_DIS_CURRENT){
+    if(Chg_w/Bat_v > MAX_CHD_CURRENT || Chg_w/Bat_v < -MAX_DIS_CURRENT){
         MODE=MODE_FAULT;                        // 故障
         setChgDisFET(MODE);                     // 故障
     }
@@ -305,14 +308,16 @@ bool getChargingPower_w(){                      // 測定の実行,応答=安定
 float getBatteryVoltage_v(){
     /* 電池電圧の測定 */
     Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
-    if(!Ac){                                    // 停電時に
-        digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+    if(!Ac){                                    // 停電時の処理
+        // 充電FETのOFFを有効にすると電圧測定の正確性が増すが、
+        // 停電時に完全に電源喪失するリスクが高まる。
+        // （充電FETの逆流ダイオードの電圧降下によって）
+    //  digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
     }else{                                      // 電源供給時に
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
-        // 下記の放電FETをOFFにすると電圧測定の正確性が増すが、
-        // 完全に電源喪失する場合がある。
+        // 放電FETのOFFを有効にすると電圧測定の正確性が増すが、
+        // 測定中に停電したときに完全に電源喪失する。
     //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
-        digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(1);                                   // 電圧の安定待ち
     float bat_v = adc(ADC_BAT_PIN);
@@ -430,8 +435,8 @@ void loop(){                                    // 繰り返し実行する関�
         S = "{\"writeKey\":\""+String(Amb_Key); // (項目)writeKey,(値)ライトキー
         S += "\",\"d1\":\"" + String(Chg_w,3);  // (項目)d1,(値)chg_w
         S += "\",\"d2\":\"" + String(BAT_V,3);  // (項目名)d2,(値)BAT_V
-        S += "\",\"d3\":\"" + String(MODE>0?MODE:0); // (項目名)d3,(値)MODE
-        S += "\",\"d4\":\"" + String(int(!Ac)); // (項目名)d4,(値)acの反転値
+        S += "\",\"d3\":\"" + String(int(!Ac)); // (項目名)d3,(値)acの反転値
+        S += "\",\"d4\":\"" + String(MODE);     // (項目名)d4,(値)MODE
         S += "\"}";
         url = "http://ambidata.io/api/v2/channels/"+String(Amb_Id)+"/data";
         http.begin(url);                        // HTTPリクエスト先を設定する
