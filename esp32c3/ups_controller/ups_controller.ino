@@ -114,8 +114,9 @@ IPAddress UDPTO_IP = {255,255,255,255};         // UDP宛先 IPアドレス
 
 RTC_DATA_ATTR int line_stat = 0; // LINEへの送信状態
                     // 0:未送信 1:停電送信済み -2:故障送信済み -1:停止送信済
+RTC_DATA_ATTR int MODE = 0;
+                    // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 
-int MODE = 0;       // -2:故障, -1:手動停止, 0:停止, 1:充電, 2:停電放電, 3:測定
 float BAT_V = -0.1; // 電池電圧の測定結果
 bool Ac;            // ACアダプタからの電源供給状態
 bool Chg, Dis;      // 充電FETと放電FETの状態または制御値
