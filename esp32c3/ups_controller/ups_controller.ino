@@ -18,7 +18,7 @@ WARNING:
     仮に電池の誤制御によって損害が発生した場合であっても補償いたしません。
 
 CSVxUDP Format:
-    myups_5, charging(W), battery(V), Outage, UPS mode⏎
+    myups_5, charging(W), battery(V), Outage, UPS mode⏎(\r\n)
 
                                           Copyright (c) 2023 Wataru KUNINO
 *******************************************************************************/
