@@ -78,8 +78,9 @@ But generally, resistors have an error tolerance of +/-5% or +/-1%. So, you need
 1. [Adjust Charging Voltage](#hardware-adjusting-cv-charging-voltage)  
 2. [Set Definition](#software-definition-adc_chg_div-and-adc_bat_div)  
 3. Write the software to your target MCU.  
-4. Connect a VRLA battery to the controller board.  
-5. Plug the AC Adaptor.  
+4. Check the voltage of a VRLA battery. If it is under 10.8V, please use another new battery.  
+5. Connect the battery to the controller board.  
+6. Plug the AC Adaptor.  
 
 Note:
 If you plugged the AC supply before connecting the battery, this system isn't going to be started, please disconnect the AC, and connect the battery before the AC.  
