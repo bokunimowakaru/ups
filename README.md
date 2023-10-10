@@ -51,6 +51,8 @@ The CV Charging Voltage is set using a 50k Ohm variable resistor by manually.
 Please adjust the output voltage is NOT over 13.8 V or under 10.8V.  
 For the example setting from 12.0 V to 13.8 V, if it is set 12.0 V, the backup time in outage might be shorter.
 But if sets 13.8V, the battery life might be shorter than 12.0 V setting.  
+This CV charging method takes many days to charge after a power outage.
+If you want to charge it more quickly, please temporarily increase the charging voltage.  
 
 ## Software Definition ADC_CHG_DIV and ADC_BAT_DIV  
 
