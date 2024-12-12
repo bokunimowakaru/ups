@@ -80,26 +80,26 @@ void led(int r,int g,int b){                    // LEDにカラーを設定
     new_state.leds[0] = rgb;
     new_state.leds[1] = rgb;
     new_state.leds[2] = rgb;
-    ws2812_write_leds(new_state);
+    if(_PIN_LED) ws2812_write_leds(new_state);
 }
 
 void led(int brightness){                       // グレースケール制御
     if(brightness > 0xff) brightness = 0xff;    // 256以上時に255に設定
-    led(brightness,brightness,brightness);      // RGB全て同値でLED制御
+    if(_PIN_LED) led(brightness,brightness,brightness);      // RGB全て同値でLED制御
 }
 
 void led_on(){                                  // LED制御の停止
-    led(30);                                    // LEDの消灯
+    if(_PIN_LED) led(30);                                    // LEDの消灯
 }
 
 void led_off(){                                 // LED制御の停止
-    led(0);                                     // LEDの消灯
+    if(_PIN_LED) led(0);                                     // LEDの消灯
 }
 
 void led_setup(int pin){
     _PIN_LED = pin;
-    ws2812_control_init();
-    led_off();
+    if(_PIN_LED) ws2812_control_init();
+    if(_PIN_LED) led_off();
 }
 
 void led_setup(){

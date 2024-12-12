@@ -34,7 +34,8 @@ CSVxUDP Format:
 #define SLEEP_P 30*1000000ul                    // スリープ時間 30秒(uint32_t)
 #define DEVICE "myups_5,"                       // デバイス名(5字+"_"+番号+",")
 
-#define PIN_LED_RGB 8                           // IO8 に WS2812を接続(DevKitM)
+#define PIN_LED_RGB 0                           // IO8 に WS2812を接続(DevKitM)
+//                  ^--- 0 でOFF
 #define FET_CHG_PIN 4                           // 充電FET GPIO 4 ピン
 #define FET_DIS_PIN 5                           // 放電FET GPIO 5 ピン
 #define OUTAGE_PIN 1                            // 停電検出 GPIO 1 ピン
