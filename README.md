@@ -148,7 +148,7 @@ And the stopping voltage for charging is set to 14.7, it's protected from unexpe
 
 ## TROUBLESHOOTING
 
-The infrared communication interface used to drive the RGB LED in this software may, in rare cases, cause the microcontroller to fail to start up.  
+The infrared communication interface in ESP32C3 used to drive the RGB LED in this software may, in rare cases, cause the microcontroller to fail to start up.  
 In that case, please set "#define PIN_LED_RGB 8" to "#define PIN_LED_RGB 0" to stop the interface.
 
 ----------------------------------------------------------------
