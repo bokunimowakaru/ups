@@ -146,6 +146,11 @@ And the stopping voltage for charging is set to 14.7, it's protected from unexpe
 |Charging	|2.3 x 6 = 13.8V	|Stop Charging	|Over 14.7V	|
 |Fatal	|1.8 x 6 = 10.8V|Disconnect	|Under 10.8V	|
 
+## TROUBLESHOOTING
+
+The infrared communication interface used to drive the RGB LED in this software may, in rare cases, cause the microcontroller to fail to start up.  
+In that case, please set "#define PIN_LED_RGB 8" to "#define PIN_LED_RGB 0" to stop the interface.
+
 ----------------------------------------------------------------
 
 by 国野 亘 Wataru KUNINO 
