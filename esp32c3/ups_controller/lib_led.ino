@@ -7,7 +7,14 @@ MITライセンスで配布します。権利表示の改変は禁止します�
 含みます。
 ***********************************************************************/
 
+// #define ESP_2_0
+// esp32 by Espressif Systems 2.0.14 以前が必要です
+
+#ifdef ESP_2_0
+
 #include "driver/rmt.h"
+	// #include "driver/rmt-tx.h"
+	// https://github.com/espressif/arduino-esp32/issues/8780
 
 // Configure these based on your project needs using menuconfig ********
 #define LED_RMT_TX_CHANNEL  (rmt_channel_t)0
@@ -72,6 +79,18 @@ void setup_rmt_data_buffer(struct led_state new_state){
         }
     }
 }
+#else // 赤外線モジュールが古い場合にRGB LEDを使用しない設定(暫定対応)
+int _PIN_LED = 0;
+struct led_state {
+    uint32_t leds[3];
+};
+
+void ws2812_control_init(void){
+}
+void ws2812_write_leds(struct led_state new_state){
+}
+
+#endif
 
 /* 引数r,g,bに代入された色をLEDに送信する。値は0～255の範囲で設定 */
 void led(int r,int g,int b){                    // LEDにカラーを設定

@@ -197,7 +197,7 @@ void setChgDisFET(int mode){
     return;
 }
 
-int algoModeControl(){
+int algoModeControl(){ /***** Control Algorithm Section *****/
     int mode = MODE;
     /* MODE制御 */
     Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
@@ -320,20 +320,34 @@ float getBatteryVoltage_v(){
     Ac = digitalRead(OUTAGE_PIN);               // 停電状態を確認
     if(!Ac){                                    // 停電時の処理
         led(10,10,0);                           // (WS2812)LEDを黄色で点灯
-        // 停電と電圧測定時が重なると、充電FETの逆流ダイオードの電圧降下によって
-        // 完全に電源喪失する場合があるかもしれません。もし、外部にダイオードを
-        // 追加しても改善できない場合は、次の行を削除してください。
-        // ただし、削除すると電池電圧測定時に電池内部抵抗の影響を受けます。
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+        // It is recommended not to change this.
+        // Because when measuring battery voltage during a power outage, 
+        // it's affected by the voltage drop due to the battery's internal
+        // resistance, and even if there is still battery power remaining,
+        // the final voltage may be determined, and it makes the risk of
+        // a COMPLETE POWER OUTAGE.
+        // But the default has also a risk that during a power outage, 
+        // the power supply through the reverse diode of the charging FET
+        // makes the voltage drop across the diode. It may cause a shortage of
+        // electricity supply.
+        // 停電と電圧測定時が重なると、充電FETの逆流ダイオードの電圧降下によって
+        // 完全に電源喪失する場合があるかもしれません。充電FETに外部にダイオードを
+        // 追加して改善できます。改善できない場合は、充電FETをOFFにしないでください。
+        // (上記の「digitalWrite(FET_CHG_PIN, LOW);」を削除する)
+        // ただし、削除すると停電中の電池電圧測定時に電池内部抵抗の電圧降下の影響を
+        // 受け、電池残量があるにも関わらず終止電圧を判定し、完全停電するリスクが
+        // 生じます。
+        // ※どちらに設定してもリスクがあるので、変更しないことを推奨します。
     }else{                                      // 電源供給時に
         led(0,20,0);                            // (WS2812)LEDを緑色で点灯
         digitalWrite(FET_CHG_PIN, LOW);         // 充電FETをOFF
+    //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
         // Setting the FET_DIS_PIN of the discharge FET to LOW in the line below
         // increases the accuracy of the voltage measurement. But it may be
         // caused to lose all power during measurement in an outage condition.
-        // 下記の放電FETのOFFを有効にすると電圧測定の正確性が増しますが、
+        // 放電FETのOFF(FET_DIS_PINをLOW)にすると電圧測定の正確性が増しますが、
         // 測定中に停電したときに完全に電源喪失する場合があります。
-    //  digitalWrite(FET_DIS_PIN, LOW);         // 放電FETをOFF
     }
     delay(2);                                   // 電圧の安定待ち
     float bat_v = adc(ADC_BAT_PIN);
