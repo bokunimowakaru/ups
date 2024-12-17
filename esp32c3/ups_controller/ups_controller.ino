@@ -34,8 +34,7 @@ CSVxUDP Format:
 #define SLEEP_P 30*1000000ul                    // スリープ時間 30秒(uint32_t)
 #define DEVICE "myups_5,"                       // デバイス名(5字+"_"+番号+",")
 
-#define PIN_LED_RGB 0                           // IO8 に WS2812を接続(DevKitM)
-//                  ^--- 0 でOFF
+#define PIN_LED_RGB 8                           // IO8 に WS2812を接続(DevKitM)
 #define FET_CHG_PIN 4                           // 充電FET GPIO 4 ピン
 #define FET_DIS_PIN 5                           // 放電FET GPIO 5 ピン
 #define OUTAGE_PIN 1                            // 停電検出 GPIO 1 ピン
@@ -380,12 +379,12 @@ void setup(){                                   // 起動時に一度だけ実�
     }else{
         gpio_deep_sleep_hold_dis();
     }
-    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     pinMode(OUTAGE_PIN, INPUT);                 // 停電検出をデジタル入力に
     pinMode(ADC_CHG_PIN, ANALOG);               // 充電側電圧をアナログ入力に
     pinMode(ADC_BAT_PIN, ANALOG);               // 電池側電圧をアナログ入力に
     Serial.begin(115200);                       // 動作確認のためのシリアル出力
     Serial.println("UPS VRLA Batteries Controller");
+    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     WiFi.mode(WIFI_STA);                        // 無線LANをSTAモードに設定
     Serial.println("WiFi.begin");
     WiFi.begin(SSID,PASS);                      // 無線LANアクセスポイントへ接続
