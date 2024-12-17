@@ -365,12 +365,12 @@ void setup(){                                   // 起動時に一度だけ実�
     }else{
         gpio_deep_sleep_hold_dis();
     }
-    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     pinMode(OUTAGE_PIN, INPUT);                 // 停電検出をデジタル入力に
     pinMode(ADC_CHG_PIN, ANALOG);               // 充電側電圧をアナログ入力に
     pinMode(ADC_BAT_PIN, ANALOG);               // 電池側電圧をアナログ入力に
     Serial.begin(115200);                       // 動作確認のためのシリアル出力
     Serial.println("UPS VRLA Batteries Controller");
+    led_setup(PIN_LED_RGB);                     // WS2812の初期設定(ポート設定)
     WiFi.mode(WIFI_STA);                        // 無線LANをSTAモードに設定
     Serial.println("WiFi.begin");
     WiFi.begin(SSID,PASS);                      // 無線LANアクセスポイントへ接続
